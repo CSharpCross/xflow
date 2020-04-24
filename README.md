@@ -91,7 +91,52 @@ webserver_module = 'www_rbac' if settings.RBAC else 'www'
 run_args += ["airflow." + webserver_module + ".app:cached_app()"]
 ```
 
-通过这部分我们就可以实际的入口根据实际的配置将会进行选择，这里我们以未开启RBAC，实际的入口将会是`airflow/www/app.py`
+通过这部分我们就可以实际的入口根据实际的配置将会进行选择，这里我们以未开启RBAC，实际的入口将会是`airflow/www/cli.py`
 中的`cached_app`函数，此时我们就可以进入到实际的主入口了，后续关于`webserver`更详细的剖析将会在其他章节进行概述。  
+
+### 3. backfill入口
+
+为了防止有人对该功能存在疑惑，这里简单解释下该功能就是用于进行任务回填。采用简单的术语描述就是当然既定的任务错失了对
+应的执行时间后，我们可以通过该方法指定对应时间使服务重新进行执行，特别适用于我们进行DAG测试开发和服务器出现故障后发生
+部分时间期间任务没有进行执行的情况下。  
+
+我们跟踪到`airflow/www/clu.py`中的`backfill`函数，可以看到具体的Dag任务通过如下代码进行查找：  
+
+```python
+dag = dag or get_dag(args)
+```
+
+这里可以直接根据既定的Dag任务也可以根据Dag_id进行查询获取，如果存在参数`task_regex`将会根据正则表达式进一步的查询具体
+需要的task任务，最后则是根据`dry_run`参数采用不同的方式进行对应任务的执行：  
+
+```python
+for task in dag.tasks:
+    print("Task {0}".format(task.task_id))
+    ti = TaskInstance(task, args.start_date)
+    ti.dry_run()     
+```
+
+如果`dry_run`不为True则执行如下函数：  
+
+```python
+dag.run(
+    start_date=args.start_date,
+    end_date=args.end_date,
+    mark_success=args.mark_success,
+     local=args.local,
+     donot_pickle=(args.donot_pickle or
+                   conf.getboolean('core', 'donot_pickle')),
+     ignore_first_depends_on_past=args.ignore_first_depends_on_past,
+     ignore_task_deps=args.ignore_dependencies,
+     pool=args.pool,
+     delay_on_limit_secs=args.delay_on_limit,
+     verbose=args.verbose,
+     conf=run_conf,
+     rerun_failed_tasks=args.rerun_failed_tasks,
+     run_backwards=args.run_backwards
+)
+```
+
+后续更具体的则需要深入了解Dag的运行机制了。  
 
 
