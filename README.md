@@ -141,7 +141,7 @@ dag.run(
 
 ## 二、WebServer剖析  
 
-由于其框架采用了[Flask](https://dormousehole.readthedocs.io/en/latest/)，故如果希望能够更好的了解其代码的含义，可能
+由于其框架采用了[Flask](https://dormousehole.readthedocs.io/en/latest/)以及插件[Flask-admin](https://flask-admin.readthedocs.io/en/latest/)，故如果希望能够更好的了解其代码的含义，可能
 需要读者具备一定的该类框架基础，否则可能会存在很多不理解的地方。  
 
 首先我们根据之前的入口描述找到`airflow/www/app.py`文件，查看对应的方法源码：` 
@@ -159,7 +159,7 @@ def cached_app(config=None, testing=False):
     return app
 ```
 
-可以看到最终是用`create_app`进行创建，通过对函数的剖析我们可以发现其中进行了相关页面视图的注册，同时通过继续往下的月度
+可以看到最终是用`create_app`进行创建，通过对函数的剖析我们可以发现其中进行了相关页面视图的注册，同时通过继续往下的阅读
 可以发现这么一行代码：  
 
 ```python
@@ -174,6 +174,31 @@ app.register_blueprint(e.api_experimental, url_prefix='/api/experimental')
 
 可以发现这里将`airflow/www/api/experimental/endpoints.py`加载进来了，并在在后续进行的注册。那么我们打开到这个对应的文件
 继续月度就可以发现，实际服务调用的后台都是该文件提供了对应的服务，对于熟悉框架的读者来说就可以通过对其进行修改从而提供扩
-展自己需要的接口功能功能或者扩展自己的页面，如果是需要修改页面的则可以通过目录下的`views.py`进行修改，里面记录了每个页面
-模块对应的实际静态页面内容。  
+展自己需要的接口功能功能或者扩展自己的页面。  
 
+对于`views.py`文件来说，为了保证快速开发其中对于个性化页面通过`Airflow`类进行对应页面，而对于一些通用的列表等界面则需要
+通过文件往下继续查看比如以下几个视图：  
+
+* PoolModelView  
+* SlaMissModelView  
+* ChartModelView
+
+当然还有其他更多的页面，这些页面在`app.py`中都是单独进行手动注册的：  
+
+```python
+av(vs.KnownEventView(
+    models.KnownEvent,
+    Session, name="Known Events", category="Data Profiling"))
+av(vs.SlaMissModelView(
+    models.SlaMiss,
+    Session, name="SLA Misses", category="Browse"))
+av(vs.TaskInstanceModelView(models.TaskInstance,
+    Session, name="Task Instances", category="Browse"))
+av(vs.LogModelView(
+    models.Log, Session, name="Logs", category="Browse"))
+av(vs.JobModelView(
+    jobs.BaseJob, Session, name="Jobs", category="Browse"))
+```
+
+还有部分没有截取，但是通过以上我们可以看到通过`admin.add_view`将页面进行加载，其中也传入的对应的数据模型以及会话相关
+的对象。  

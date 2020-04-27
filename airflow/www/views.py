@@ -267,11 +267,12 @@ attr_renderer = {
 
 def data_profiling_required(f):
     """Decorator for views requiring data profiling access"""
+
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if (
-                current_app.config['LOGIN_DISABLED'] or
-                (not current_user.is_anonymous and current_user.data_profiling())
+            current_app.config['LOGIN_DISABLED'] or
+            (not current_user.is_anonymous and current_user.data_profiling())
         ):
             return f(*args, **kwargs)
         else:
@@ -350,12 +351,12 @@ def get_date_time_num_runs_dag_runs_form_data(request, session, dag):
     DR = models.DagRun
     drs = (
         session.query(DR)
-        .filter(
+            .filter(
             DR.dag_id == dag.dag_id,
             DR.execution_date <= base_date)
-        .order_by(desc(DR.execution_date))
-        .limit(num_runs)
-        .all()
+            .order_by(desc(DR.execution_date))
+            .limit(num_runs)
+            .all()
     )
     dr_choices = []
     dr_state = None
@@ -388,6 +389,10 @@ class AirflowViewMixin(object):
 
 
 class Airflow(AirflowViewMixin, BaseView):
+    """
+    自定义视图
+    """
+
     def is_visible(self):
         return False
 
@@ -464,15 +469,15 @@ class Airflow(AirflowViewMixin, BaseView):
         if not payload['error'] and len(df) == 0:
             payload['error'] += "Empty result set. "
         elif (
-                not payload['error'] and
-                chart.sql_layout == 'series' and
-                chart.chart_type != "datatable" and
-                len(df.columns) < 3):
+            not payload['error'] and
+            chart.sql_layout == 'series' and
+            chart.chart_type != "datatable" and
+            len(df.columns) < 3):
             payload['error'] += "SQL needs to return at least 3 columns. "
         elif (
-                not payload['error'] and
-                chart.sql_layout == 'columns' and
-                len(df.columns) < 2):
+            not payload['error'] and
+            chart.sql_layout == 'columns' and
+            len(df.columns) < 2):
             payload['error'] += "SQL needs to return at least 2 columns. "
         elif not payload['error']:
             import numpy as np
@@ -580,7 +585,7 @@ class Airflow(AirflowViewMixin, BaseView):
         )
 
         data = {}
-        for (dag_id, ) in dag_ids:
+        for (dag_id,) in dag_ids:
             data[dag_id] = {}
         for dag_id, state, count in dag_state_stats:
             if dag_id not in data:
@@ -632,13 +637,13 @@ class Airflow(AirflowViewMixin, BaseView):
         # If no dag_run is active, return task instances from most recent dag_run.
         LastTI = (
             session.query(TI.dag_id.label('dag_id'), TI.state.label('state'))
-            .join(LastDagRun, and_(
+                .join(LastDagRun, and_(
                 LastDagRun.c.dag_id == TI.dag_id,
                 LastDagRun.c.execution_date == TI.execution_date))
         )
         RunningTI = (
             session.query(TI.dag_id.label('dag_id'), TI.state.label('state'))
-            .join(RunningDagRun, and_(
+                .join(RunningDagRun, and_(
                 RunningDagRun.c.dag_id == TI.dag_id,
                 RunningDagRun.c.execution_date == TI.execution_date))
         )
@@ -646,7 +651,7 @@ class Airflow(AirflowViewMixin, BaseView):
         UnionTI = union_all(LastTI, RunningTI).alias('union_ti')
         qry = (
             session.query(UnionTI.c.dag_id, UnionTI.c.state, sqla.func.count())
-            .group_by(UnionTI.c.dag_id, UnionTI.c.state)
+                .group_by(UnionTI.c.dag_id, UnionTI.c.state)
         )
 
         data = {}
@@ -657,7 +662,7 @@ class Airflow(AirflowViewMixin, BaseView):
         session.commit()
 
         payload = {}
-        for (dag_id, ) in dag_ids:
+        for (dag_id,) in dag_ids:
             payload[dag_id] = []
             for state in State.task_states:
                 count = data.get(dag_id, {}).get(state, 0)
@@ -700,10 +705,10 @@ class Airflow(AirflowViewMixin, BaseView):
         root = request.args.get('root', '')
 
         TI = models.TaskInstance
-        states = session\
-            .query(TI.state, sqla.func.count(TI.dag_id))\
-            .filter(TI.dag_id == dag_id)\
-            .group_by(TI.state)\
+        states = session \
+            .query(TI.state, sqla.func.count(TI.dag_id)) \
+            .filter(TI.dag_id == dag_id) \
+            .group_by(TI.state) \
             .all()
 
         active_runs = models.DagRun.find(
@@ -877,13 +882,14 @@ class Airflow(AirflowViewMixin, BaseView):
                     while 'end_of_log' not in metadata or not metadata['end_of_log']:
                         logs, metadata = _get_logs_with_metadata(try_number, metadata)
                         yield "\n".join(logs) + "\n"
+
             return Response(_generate_log_stream(try_number, metadata),
                             mimetype="text/plain",
                             headers={"Content-Disposition": "attachment; filename={}".format(
                                 attachment_filename)})
         except AttributeError as e:
             error_message = ["Task log handler {} does not support read logs.\n{}\n"
-                             .format(task_log_reader, str(e))]
+                                 .format(task_log_reader, str(e))]
             metadata['end_of_log'] = True
             return jsonify(message=error_message, error=True, metadata=metadata)
 
@@ -975,7 +981,7 @@ class Airflow(AirflowViewMixin, BaseView):
             if not attr_name.startswith('_'):
                 attr = getattr(task, attr_name)
                 if type(attr) != type(self.task) and \
-                        attr_name not in attr_renderer:  # noqa: E721
+                    attr_name not in attr_renderer:  # noqa: E721
                     task_attrs.append((attr_name, str(attr)))
 
         # Color coding the special attributes that are code
@@ -1002,10 +1008,10 @@ class Airflow(AirflowViewMixin, BaseView):
             <br/>
             If this task instance does not start soon please contact your Airflow """
                    """administrator for assistance."""
-                   .format(
-                       "- This task instance already ran and had its state changed "
-                       "manually (e.g. cleared in the UI)<br/>"
-                       if ti.state == State.NONE else "")))]
+                .format(
+                "- This task instance already ran and had its state changed "
+                "manually (e.g. cleared in the UI)<br/>"
+                if ti.state == State.NONE else "")))]
 
         # Use the scheduler's context to figure out which dependencies are not met
         dep_context = DepContext(SCHEDULER_QUEUED_DEPS)
@@ -1290,10 +1296,10 @@ class Airflow(AirflowViewMixin, BaseView):
     @provide_session
     def blocked(self, session=None):
         DR = models.DagRun
-        dags = session\
-            .query(DR.dag_id, sqla.func.count(DR.id))\
-            .filter(DR.state == State.RUNNING)\
-            .group_by(DR.dag_id)\
+        dags = session \
+            .query(DR.dag_id, sqla.func.count(DR.id)) \
+            .filter(DR.state == State.RUNNING) \
+            .group_by(DR.dag_id) \
             .all()
 
         payload = []
@@ -1504,12 +1510,12 @@ class Airflow(AirflowViewMixin, BaseView):
         DR = models.DagRun
         dag_runs = (
             session.query(DR)
-            .filter(
+                .filter(
                 DR.dag_id == dag.dag_id,
                 DR.execution_date <= base_date)
-            .order_by(DR.execution_date.desc())
-            .limit(num_runs)
-            .all()
+                .order_by(DR.execution_date.desc())
+                .limit(num_runs)
+                .all()
         )
         dag_runs = {
             dr.execution_date: alchemy_to_dict(dr) for dr in dag_runs}
@@ -1553,7 +1559,7 @@ class Airflow(AirflowViewMixin, BaseView):
 
             def set_duration(tid):
                 if isinstance(tid, dict) and tid.get("state") == State.RUNNING \
-                        and tid["start_date"] is not None:
+                    and tid["start_date"] is not None:
                     d = timezone.utcnow() - pendulum.parse(tid["start_date"])
                     tid["duration"] = d.total_seconds()
                 return tid
@@ -1738,13 +1744,13 @@ class Airflow(AirflowViewMixin, BaseView):
         TF = models.TaskFail
         ti_fails = (
             session
-            .query(TF)
-            .filter(
+                .query(TF)
+                .filter(
                 TF.dag_id == dag.dag_id,
                 TF.execution_date >= min_date,
                 TF.execution_date <= base_date,
                 TF.task_id.in_([t.task_id for t in dag.tasks]))
-            .all()
+                .all()
         )
 
         fails_totals = defaultdict(int)
@@ -2014,11 +2020,11 @@ class Airflow(AirflowViewMixin, BaseView):
         TF = models.TaskFail
         ti_fails = list(itertools.chain(*[(
             session
-            .query(TF)
-            .filter(TF.dag_id == ti.dag_id,
-                    TF.task_id == ti.task_id,
-                    TF.execution_date == ti.execution_date)
-            .all()
+                .query(TF)
+                .filter(TF.dag_id == ti.dag_id,
+                        TF.task_id == ti.task_id,
+                        TF.execution_date == ti.execution_date)
+                .all()
         ) for ti in tis]))
 
         # determine bars to show in the gantt chart
@@ -3232,18 +3238,18 @@ class DagModelView(wwwutils.SuperUserMixin, ModelView):
         """
         Default filters for model
         """
-        return super(DagModelView, self)\
-            .get_query()\
-            .filter(or_(models.DagModel.is_active, models.DagModel.is_paused))\
+        return super(DagModelView, self) \
+            .get_query() \
+            .filter(or_(models.DagModel.is_active, models.DagModel.is_paused)) \
             .filter(~models.DagModel.is_subdag)
 
     def get_count_query(self):
         """
         Default filters for model
         """
-        return super(DagModelView, self)\
-            .get_count_query()\
-            .filter(models.DagModel.is_active)\
+        return super(DagModelView, self) \
+            .get_count_query() \
+            .filter(models.DagModel.is_active) \
             .filter(~models.DagModel.is_subdag)
 
     def edit_form(self, obj=None):
