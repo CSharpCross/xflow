@@ -350,6 +350,59 @@ def _get_executor(executor_name):
 ```
 
 通过上述代码我们可以看到其支持了多种的调度执行器，每个调度执行器的源码实现均在对应文件夹下，如果读者感兴趣可以自行根据
-需要阅读具体的实现机制。  
+需要阅读具体的实现机制。当然讲到这里大家一定很困惑具体的DAG任务是如何分配并执行的，其实上述剖析过程中在函数
+`SchedulerJob._execute_helper`内部我们可以看到如下的函数：
 
+```python
+                    self._change_state_for_tis_without_dagrun(simple_dag_bag,
+                                                              [State.QUEUED,
+                                                               State.SCHEDULED,
+                                                               State.UP_FOR_RESCHEDULE],
+                                                              State.NONE)
+
+                    self._execute_task_instances(simple_dag_bag,
+                                                 (State.SCHEDULED,))
+```
+
+我们通过`_execute_task_instances`对DAG任务进行的调度分配，我们可以继续查看其内部的实现方式，其实就是将任务推到队列中等
+待任务调度器去进行调度并执行：  
+
+```python
+            self._enqueue_task_instances_with_queued_state(
+                simple_dag_bag,
+                simple_tis_with_state_changed)
+```
+
+当然我们可以继续跟踪就可以看到最终实际调用`executor`对象的部分，就是执行对应的指令了：  
+
+```python
+            command = TI.generate_command(
+                simple_task_instance.dag_id,
+                simple_task_instance.task_id,
+                simple_task_instance.execution_date,
+                local=True,
+                mark_success=False,
+                ignore_all_deps=False,
+                ignore_depends_on_past=False,
+                ignore_task_deps=False,
+                ignore_ti_state=False,
+                pool=simple_task_instance.pool,
+                file_path=simple_dag.full_filepath,
+                pickle_id=simple_dag.pickle_id)
+
+            priority = simple_task_instance.priority_weight
+            queue = simple_task_instance.queue
+            self.log.info(
+                "Sending %s to executor with priority %s and queue %s",
+                simple_task_instance.key, priority, queue
+            )
+
+            self.executor.queue_command(
+                simple_task_instance,
+                command,
+                priority=priority,
+                queue=queue)
+```
+
+那么我们需要根据不同的调度执行器去查看对应的实现机制即可。  
 
