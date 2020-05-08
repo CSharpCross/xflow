@@ -202,3 +202,154 @@ av(vs.JobModelView(
 
 还有部分没有截取，但是通过以上我们可以看到通过`admin.add_view`将页面进行加载，其中也传入的对应的数据模型以及会话相关
 的对象。  
+
+## 三、Scheduler剖析
+
+对于任何任务调度平台来说其中最核心的必然是任务的调度部分，所以下面我们将开始剖析调度程序背后的源码逻辑。首先我们可以
+`cli.py`的启动源码可以发现其中调用了对应的函数，函数其中主要使用了jobs模块，剩下的部分均为进程的维护。
+
+```python
+    job = jobs.SchedulerJob(
+        dag_id=args.dag_id,
+        subdir=process_subdir(args.subdir),
+        run_duration=args.run_duration,
+        num_runs=args.num_runs,
+        do_pickle=args.do_pickle)
+```
+
+可以看到主要是实例化了`SchedulerJob`类，而对应的文件存在于`airflow/jobs/scheduler_job.py`中。  
+
+通过对该文件的剖析我们可以发现其中存在多级的继承关系，最后的根类为：  
+
+```python
+
+metadata = (
+    None
+    if not SQL_ALCHEMY_SCHEMA or SQL_ALCHEMY_SCHEMA.isspace()
+    else MetaData(schema=SQL_ALCHEMY_SCHEMA)
+)
+Base = declarative_base(metadata=metadata)  # type: Any
+```
+
+可以发现这是使用了`SQLAlchemy`的`declarative_base`方法生成了数据基础模型（为了能够调度相关数据进行持久化），期间进行各种
+相关参数的初始化，最后是通过`cli.py`中的`job.run()`进行了启动，我们可以继续研究该函数(base_job.py)。  
+
+```python
+with create_session() as session:
+    self.state = State.RUNNING
+    session.add(self)
+    session.commit()
+    id_ = self.id
+    make_transient(self)
+    self.id = id_
+```
+
+通过对该函数的解读可以发现其中使用`create_session`创建的数据库会话，并且在后续使用中将当前的数据进行了保存并提交。当然
+这里仅仅直至截取了部分的代码，后续还有相关关于数据的操作的代码。在完成这一系列的操作之后我们可以看到最后通过执行
+`self._execute()`，但是通过我们的观察可以发现当前所在类`basejob`该函数并没有实现，但是我们可以回头继续观察实际当前的类
+应该是`SchedulerJob`，所以对应该方法其实是存在于这个类文件夹，我们接着继续查看对应的源码进行解读。  
+
+```python
+try:
+    self._execute_helper()
+except Exception:
+    self.log.exception("Exception when executing execute_helper")
+finally:
+    self.processor_agent.end()
+    self.log.info("Exited execute loop")
+```
+
+进入该方法我们可以看到依然是调用了其他的函数，所以我们继续跟踪这个函数，通过捕获的异常信息可以看出这个方法内部必然存在
+循环逻辑。  
+
+```python
+self.executor.start()
+
+self.log.info("Resetting orphaned tasks for active dag runs")
+self.reset_state_for_orphaned_tasks()
+```
+
+通过这里可以看出通过调用`executor`对象进行了启动了对应的调用程序，但是这个调度对象又是从何而来呢，我们通过构造函数可以
+看到最终是通过其他方法根据当前的配置进行获取的，这里需要我们回到`base_job.py`文件中，可以看到如下函数：  
+
+```python
+
+    def __init__(
+            self,
+            executor=None,
+            heartrate=None,
+            *args, **kwargs):
+        self.hostname = get_hostname()
+        self.executor = executor or executors.get_default_executor()
+        self.executor_class = executor.__class__.__name__
+        self.start_date = timezone.utcnow()
+        self.latest_heartbeat = timezone.utcnow()
+        if heartrate is not None:
+            self.heartrate = heartrate
+        self.unixname = getpass.getuser()
+        self.max_tis_per_query = conf.getint('scheduler', 'max_tis_per_query')
+        super(BaseJob, self).__init__(*args, **kwargs)
+```
+
+其中我们可以看到具体的对象是使用`executors.get_default_executor()`获取的，具体的文件在`airflow/executors/__init__.py`
+中，我们继续进行查看可以发现是根据配置信息进行获取的：  
+
+```python
+def get_default_executor():
+    """Creates a new instance of the configured executor if none exists and returns it"""
+    global DEFAULT_EXECUTOR
+
+    if DEFAULT_EXECUTOR is not None:
+        return DEFAULT_EXECUTOR
+
+    executor_name = conf.get('core', 'EXECUTOR')
+
+    DEFAULT_EXECUTOR = _get_executor(executor_name)
+
+    log = LoggingMixin().log
+    log.info("Using executor %s", executor_name)
+
+    return DEFAULT_EXECUTOR
+```
+
+通过其中代码我们可以看到最终是通过`DEFAULT_EXECUTOR = _get_executor(executor_name)`获取到我们实际需要的调度器执行器，而
+该函数就在下面定义的类中：  
+
+```python
+class Executors:
+    LocalExecutor = "LocalExecutor"
+    SequentialExecutor = "SequentialExecutor"
+    CeleryExecutor = "CeleryExecutor"
+    DaskExecutor = "DaskExecutor"
+    MesosExecutor = "MesosExecutor"
+    KubernetesExecutor = "KubernetesExecutor"
+
+
+def _get_executor(executor_name):
+    """
+    Creates a new instance of the named executor.
+    In case the executor name is not know in airflow,
+    look for it in the plugins
+    """
+    if executor_name == Executors.LocalExecutor:
+        return LocalExecutor()
+    elif executor_name == Executors.SequentialExecutor:
+        return SequentialExecutor()
+    elif executor_name == Executors.CeleryExecutor:
+        from airflow.executors.celery_executor import CeleryExecutor
+        return CeleryExecutor()
+    elif executor_name == Executors.DaskExecutor:
+        from airflow.executors.dask_executor import DaskExecutor
+        return DaskExecutor()
+    elif executor_name == Executors.MesosExecutor:
+        from airflow.contrib.executors.mesos_executor import MesosExecutor
+        return MesosExecutor()
+    elif executor_name == Executors.KubernetesExecutor:
+        from airflow.contrib.executors.kubernetes_executor import KubernetesExecutor
+        return KubernetesExecutor()
+```
+
+通过上述代码我们可以看到其支持了多种的调度执行器，每个调度执行器的源码实现均在对应文件夹下，如果读者感兴趣可以自行根据
+需要阅读具体的实现机制。  
+
+

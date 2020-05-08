@@ -2158,6 +2158,9 @@ class Airflow(AirflowViewMixin, BaseView):
 
 
 class HomeView(AirflowViewMixin, AdminIndexView):
+    """
+    首页视图
+    """
     @expose("/")
     @login_required
     @provide_session
