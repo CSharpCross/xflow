@@ -406,3 +406,34 @@ def _get_executor(executor_name):
 
 那么我们需要根据不同的调度执行器去查看对应的实现机制即可。  
 
+## 四、Worker剖析
+
+介绍完调度程序部分，我们接着介绍工作节点。那么我们依然需要回到`cli.py`文件中寻找到worker的启动部分的程序，经过分析我们
+可以发现其中的核心部分在于：  
+
+```python
+autoscale = args.autoscale
+if autoscale is None and conf.has_option("celery", "worker_autoscale"):
+    autoscale = conf.get("celery", "worker_autoscale")
+worker = worker.worker(app=celery_app)
+```
+
+通过这部分的初始化，当然细心的读者可以发现其中的`celery_app`是来自于`celery_executor.py`文件中的：  
+
+```python
+from airflow.executors.celery_executor import app as celery_app
+```
+
+在完成上面的初始化工作后，最终根据是否需要后台运行从而调用具体的运行方法：  
+
+```python
+        with ctx:
+            sp = subprocess.Popen(['airflow', 'serve_logs'], env=env, close_fds=True)
+            worker.run(**options)
+            sp.kill()
+```
+
+如果我们需要继续跟踪将具体跟踪到了`Celery`类库的源码中，如果读者感兴趣可以自行安装该库进行跟踪，由于篇幅原因这里就不多做
+介绍了。  
+
+
